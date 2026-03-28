@@ -1,0 +1,66 @@
+\documentclass[10pt, letterpaper]{article}
+
+% --- Packages ---
+\usepackage[margin=0.6in]{geometry}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{mathpazo}
+\usepackage[T1]{fontenc}
+\usepackage{fontawesome5}
+\usepackage{xcolor}
+
+% --- Color Definition ---
+\definecolor{brandorange}{HTML}{F58025}
+
+% --- Formatting Setup ---
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.4em}
+
+% Updated section styling: Content now starts on the next line
+\titleformat{\section}{\bfseries\color{brandorange}}{}{0em}{}
+\titlespacing{\section}{0pt}{0.8em}{0.2em}
+
+\begin{document}
+
+% --- Compact Header ---
+{\large \textbf{Spectral Filtering for Vision-Language-Action Models}} \hfill \textbf{Team:} Shivam Kak, Ishan Saha (\textit{2 members}) \\
+\rule{\textwidth}{0.4pt}
+
+% --- Abstract ---
+\section*{\faLightbulb\ Abstract}
+\textbf{Motivation:} Vision-language-action (VLA) models such as $\pi_0$ have become the emergent paradigm for robotic manipulation, enabling robots to follow language instructions by predicting action sequences from visual observations. These models typically predict action chunks---sequences of future actions---where prediction quality degrades over the horizon, particularly in the autoregressive $\pi_0$-FAST variant. Prior work on applying Spectral Transfer Units (STUs) to world models in Atari environments has demonstrated that spectral filtering dramatically improves long-horizon autoregressive prediction by efficiently capturing sequential dependencies through spectral decomposition of the Hankel matrix. This makes spectral filtering a compelling candidate for improving action sequence prediction in VLAs. \\
+\textbf{Problem Statement:} Can Spectral Transfer Units (STUs) improve action chunk prediction quality in vision-language-action models, particularly for long-horizon manipulation tasks where autoregressive errors compound? Specifically, we investigate whether adding STU layers to the action prediction heads of $\pi_0$-FAST and $\pi_{0.5}$ yields higher task success rates on standard benchmarks compared to the existing architectures. \\
+\textbf{Scope:} This project focuses on integrating STU modules into the action prediction components of VLA models within the open-source \texttt{openpi} framework. We will evaluate on the LIBERO benchmark, which provides standardized manipulation tasks and existing baselines. We will not deploy on any physical hardware or train models from scratch. Instead, we fine-tune from pre-trained base model checkpoints provided by Physical Intelligence. We also restrict our study to the flow-matching ($\pi_{0.5}$) and autoregressive ($\pi_0$-FAST) action heads, and do not modify the vision or language backbone.
+
+% --- Expected Outcomes ---
+\section*{\faCheckCircle\ Expected Outcomes}
+\begin{itemize}[leftmargin=1.5em, nosep]
+    \item Integration of STU layers into the action prediction heads of $\pi_0$-FAST and/or $\pi_{0.5}$ within the \texttt{openpi} codebase.
+    \item Comparative evaluation on the LIBERO benchmark measuring task success rate, action prediction error (MSE over action chunks), and long-horizon rollout quality against the baseline fine-tuned checkpoints.
+    \item Ablation studies isolating the effect of STU placement (autoregressive decoder vs.\ flow-matching denoiser vs.\ temporal observation encoder), number of spectral filters $K$, and sequence history length.
+    \item Final artifacts: modified \texttt{openpi} codebase with STU integration, trained model checkpoints, evaluation scripts, and technical report.
+\end{itemize}
+
+% --- Resources Required ---
+\section*{\faCogs\ Resources}
+\textbf{Compute:} NVIDIA H100 (Della cluster + AI Lab cluster) \\
+\textbf{Hardware/Sim:} LIBERO simulation benchmark \\
+\textbf{Data:} OpenPI pre-trained checkpoints and associated datasets; LIBERO dataset (available via HuggingFace); pre-converted LeRobot-format datasets provided by the \texttt{openpi} repository
+
+% --- Milestones and Timeline ---
+\section*{\faCalendar\ Milestones}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+    \toprule
+    \textbf{Week} & \textbf{Objective} \\
+    \midrule
+    Week 1--2  & Literature review of VLA architectures ($\pi_0$, $\pi_0$-FAST, $\pi_{0.5}$) and spectral filtering methods. Set up \texttt{openpi} environment on cluster. Reproduce baseline LIBERO fine-tuning and evaluation. \\
+    Week 3--4 & Implement STU integration into the $\pi_0$-FAST autoregressive action decoder. Run initial fine-tuning experiments on LIBERO. Establish baseline comparison metrics (success rate, action MSE). \\
+    Week 5--6 & Implement STU integration into $\pi_{0.5}$ flow-matching action head. Experiment with STU for temporal observation encoding (processing state history). Hyperparameter sweep over number of filters $K$ and sequence length. \\
+    Week 7--8 & Conduct ablation studies: STU placement, filter count, history length. Compare all variants against baselines on full LIBERO benchmark suite. \\
+    Week 9--10 & Analyze results, generate final evaluation metrics with error bars across multiple seeds. Write technical report and prepare final submission. \\
+    \bottomrule
+\end{tabularx}
+
+\end{document}
