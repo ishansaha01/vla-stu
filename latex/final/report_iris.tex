@@ -1,0 +1,100 @@
+\documentclass[10pt, letterpaper]{article}
+
+% --- Packages ---
+\usepackage[margin=0.6in]{geometry}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{mathpazo}
+\usepackage[T1]{fontenc}
+\usepackage{xcolor}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+
+% --- Color Definition ---
+\definecolor{brandorange}{HTML}{F58025}
+
+% --- Formatting Setup ---
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.35em}
+
+\titleformat{\section}{\bfseries\color{brandorange}}{}{0em}{}
+\titlespacing{\section}{0pt}{0.6em}{0.15em}
+
+\begin{document}
+
+% --- Compact Header ---
+{\large \textbf{Spectral World Models: Long-Horizon Imagined Rollouts via Spectral Filtering}} \hfill \textbf{Team:} Shivam Kak, Ishan Saha, Connor Brown \\
+\rule{\textwidth}{0.4pt}
+
+% --- Abstract ---
+\section*{Abstract}
+
+Transformer-based world models such as IRIS [1], STORM [2], TWISTER [3], and TWM [4] have demonstrated impressive sample efficiency in model-based reinforcement learning by learning environment dynamics and training policies entirely in imagination. However, these approaches suffer from compounding prediction errors during long-horizon rollouts: small inaccuracies in single-step predictions accumulate over many autoregressive steps, degrading the quality of imagined trajectories and the policies learned from them. We propose to address this fundamental limitation by integrating Spectral Transfer Units (STUs) [5]---sequence-to-sequence layers based on Hankel matrix eigendecomposition---into the dynamics backbone of Transformer world models. STUs provide efficient long-range memory through spectral filtering, enabling the model to capture global temporal structure that local attention may miss. We outline our proposed architecture, discuss its theoretical motivation from online control, and describe planned experiments comparing STU-augmented world models against Transformer baselines on the Atari 100k benchmark, with a focus on model fidelity over extended rollout horizons and normalized performance per parameter count.
+
+% --- Related Work ---
+\section*{Related Work: Transformer World Models}
+
+\textbf{IRIS} [1] introduced a world model composed of a discrete autoencoder (VQ-VAE) and an autoregressive GPT-like Transformer for dynamics modeling. Observations are tokenized into discrete codes, and the Transformer predicts next-frame tokens, rewards, and episode terminations autoregressively. IRIS achieved a mean human-normalized score of 1.046 on Atari 100k---superhuman performance with only 2 hours of gameplay. Its key insight is casting dynamics learning as sequence modeling over a learned discrete vocabulary. However, IRIS uses standard causal attention with fixed context windows, limiting its ability to capture long-range temporal dependencies across many rollout steps.
+
+\textbf{STORM} (Stochastic Transformer-based wORld Model) [2] extends the Transformer world model paradigm by introducing stochastic latent variables to better capture environment stochasticity. Like IRIS, it uses a discrete tokenization scheme and autoregressive prediction, but adds variational components to model multi-modal futures. STORM demonstrates improved performance in stochastic environments but still relies on standard attention for temporal modeling, inheriting the same compounding error problem over long horizons.
+
+\textbf{TWISTER} (Transformer WIth State-action rEpResentation) [3] improves world model efficiency by learning compact state-action representations that reduce the effective sequence length the Transformer must process. By compressing the input representation, TWISTER mitigates some computational costs of long-context modeling but does not fundamentally address the error accumulation in autoregressive rollouts.
+
+\textbf{TWM} (Transformer-based World Model) [4] proposes architectural modifications including improved tokenization and training objectives for Transformer world models. TWM achieves competitive performance while being more parameter-efficient than IRIS, but like all autoregressive Transformer approaches, prediction fidelity degrades as the imagination horizon increases.
+
+\textbf{Common limitation.} All four approaches generate imagined trajectories by iteratively predicting one frame at a time. Each prediction step introduces small errors in token prediction, reward estimation, and termination detection. Over $H$ rollout steps, these errors compound: early mistakes shift the state distribution away from the training data, causing subsequent predictions to become increasingly unreliable. This is analogous to the well-known problem of compounding errors in behavioral cloning [6], but applied to dynamics models rather than policies. IRIS partially mitigates this by keeping imagination horizons short ($H = 15$), but this limits the effective planning depth.
+
+% --- Proposed Method ---
+\section*{Proposed Method}
+
+\textbf{Spectral Transfer Units.}
+STUs [5] perform sequence-to-sequence mappings via convolution with spectral filters derived from the Hankel matrix $Z_{ij} = \frac{2}{(i+j)^3 - (i+j)}$. The top-$K$ eigenvectors of $Z$, scaled by the fourth root of their eigenvalues, serve as learned spectral filters:
+\vspace{-0.3em}
+\begin{equation}
+y = \textstyle\sum_{k=1}^{K} \left( (u * \phi_k^+) \cdot M_k^+ + (u * \phi_k^-) \cdot M_k^- \right)
+\end{equation}
+\vspace{-0.3em}
+where convolution is performed via FFT in $O(L \log L)$ time. Crucially, the spectral filters encode global sequential structure---low-frequency trends and periodic patterns---that attention-based models must learn implicitly through many layers. The connection to online control theory [5] provides theoretical guarantees on the approximation quality of linear dynamical systems, suggesting STUs are well-suited for modeling the structured dynamics of game environments.
+
+\textbf{Architecture.}
+We propose replacing (or augmenting) the autoregressive Transformer backbone $G$ in IRIS with an STU-enhanced architecture. Specifically, we consider two integration strategies:
+\begin{enumerate}[leftmargin=1.5em, nosep]
+    \item \textbf{Residual STU blocks}: Insert STU layers between Transformer blocks, allowing spectral filtering to refine the hidden representations at each layer. The Transformer captures local token-level dependencies while the STU captures global temporal patterns.
+    \item \textbf{STU dynamics head}: Replace the Transformer entirely for dynamics prediction, using an STU-based sequence model that processes the full token-action history. This tests whether spectral filtering alone can capture environment dynamics.
+\end{enumerate}
+In both cases, the discrete autoencoder $(E, D)$ and the actor-critic policy learning are unchanged from IRIS. Only the dynamics backbone is modified, isolating the effect of the architectural change.
+
+\textbf{Motivation from online control.}
+STUs originate from spectral filtering algorithms for online control of linear dynamical systems [5, 7]. The Hankel matrix captures the impulse response of such systems, and its eigenvectors form an optimal basis for approximating system dynamics. Game environments, while not linear, exhibit structured temporal patterns (periodic enemy spawns, predictable physics, score mechanics) that spectral filters can efficiently represent. By providing an inductive bias toward smooth, globally-coherent temporal predictions, STUs may reduce the compounding errors that arise from purely local (attention-based) next-token prediction.
+
+% --- Planned Experiments ---
+\section*{Planned Experiments}
+
+We plan to evaluate on the \textbf{Atari 100k} benchmark [8], following the IRIS evaluation protocol (5 seeds, 100 evaluation episodes per game, 100k environment steps).
+
+\textbf{Metrics.} Beyond standard human-normalized scores, we will specifically measure:
+\begin{itemize}[leftmargin=1.5em, nosep]
+    \item \textbf{Rollout fidelity vs.\ horizon}: Given a real trajectory, condition the world model on the first $C$ frames and measure prediction error (token accuracy, reward prediction error) as a function of rollout length $H \in \{5, 10, 15, 25, 50\}$. This directly quantifies compounding error.
+    \item \textbf{Performance per parameter}: Report human-normalized score divided by total model parameters, comparing the parameter efficiency of STU-based vs.\ Transformer-based dynamics models. STU layers have $O(K \cdot D^2)$ parameters vs.\ $O(D^2)$ per attention layer, so the overhead is controlled.
+    \item \textbf{Imagination horizon sensitivity}: Train policies with varying imagination horizons $H$ and measure the marginal return of longer rollouts. If STUs reduce compounding error, longer horizons should benefit STU models more than Transformer baselines.
+\end{itemize}
+
+\textbf{Baselines.} We compare against IRIS (Transformer backbone) using the official codebase, and ablate: (a) STU-only backbone, (b) Transformer + residual STU blocks, (c) varying $K \in \{4, 8, 16, 32\}$ spectral filters.
+
+% --- References ---
+\section*{References}
+\begin{enumerate}[leftmargin=1.5em, nosep, label={[\arabic*]}]
+    \item Micheli, V., Alonso, E., Fleuret, F. Transformers are Sample-Efficient World Models. \textit{ICLR}, 2023.
+    \item Zhang, W., et al. STORM: Efficient Stochastic Transformer based World Models. \textit{NeurIPS}, 2023.
+    \item Patalay, A., et al. TWISTER: Transformer WIth State-action rEpResentation. \textit{Preprint}, 2024.
+    \item Robine, J., et al. Transformer-based World Models Are Happy With 100k Interactions. \textit{ICLR}, 2023.
+    \item Agarwal, N., Hazan, E., et al. Spectral State Space Models. \textit{arXiv:2312.06837}, 2023.
+    \item Ross, S., Gordon, G., Bagnell, D. A Reduction of Imitation Learning to No-Regret Online Learning. \textit{AISTATS}, 2011.
+    \item Hazan, E., et al. Spectral Filtering for General Linear Dynamical Systems. \textit{NeurIPS}, 2018.
+    \item Kaiser, L., et al. Model Based Reinforcement Learning for Atari. \textit{ICLR}, 2020.
+\end{enumerate}
+
+\end{document}
