@@ -42,6 +42,7 @@ import wandb
 
 import openpi.models.pi0_config
 import openpi.models_pytorch.pi0_pytorch
+import openpi.models_pytorch.pi0_stu_pytorch
 import openpi.shared.normalize as _normalize
 import openpi.training.config as _config
 import openpi.training.data_loader as _data
@@ -406,7 +407,15 @@ def train_loop(config: _config.TrainConfig):
         # Update dtype to match pytorch_training_precision
         object.__setattr__(model_cfg, "dtype", config.pytorch_training_precision)
 
-    model = openpi.models_pytorch.pi0_pytorch.PI0Pytorch(model_cfg).to(device)
+    # Check if STU variant is requested via config name
+    stu_num_filters = getattr(config, "stu_num_filters", None)
+    if stu_num_filters is not None and stu_num_filters > 0:
+        model = openpi.models_pytorch.pi0_stu_pytorch.PI0STUPytorch(
+            model_cfg, stu_num_filters=stu_num_filters
+        ).to(device)
+        logging.info(f"Using PI0STUPytorch model with {stu_num_filters} spectral filters")
+    else:
+        model = openpi.models_pytorch.pi0_pytorch.PI0Pytorch(model_cfg).to(device)
 
     if hasattr(model, "gradient_checkpointing_enable"):
         enable_gradient_checkpointing = True
@@ -443,9 +452,10 @@ def train_loop(config: _config.TrainConfig):
         logging.info(f"Loading weights from: {config.pytorch_weight_path}")
 
         model_path = os.path.join(config.pytorch_weight_path, "model.safetensors")
-        safetensors.torch.load_model(
-            (model.module if isinstance(model, torch.nn.parallel.DistributedDataParallel) else model), model_path
-        )
+        model_to_load = model.module if isinstance(model, torch.nn.parallel.DistributedDataParallel) else model
+        # Use strict=False to allow loading base model weights into STU-augmented models
+        # (STU parameters will be randomly initialized)
+        safetensors.torch.load_model(model_to_load, model_path, strict=False)
         logging.info(f"Loaded PyTorch weights from {config.pytorch_weight_path}")
 
     # Optimizer + learning rate schedule from config

@@ -141,9 +141,10 @@ def preprocess_observation_pytorch(
             # Back to [-1, 1]
             image = image * 2.0 - 1.0
 
-        # Convert back to [B, C, H, W] format if it was originally channels-first
-        if is_channels_first:
-            image = image.permute(0, 3, 1, 2)  # [B, H, W, C] -> [B, C, H, W]
+        # Always output [B, C, H, W] format for the vision tower (SigLIP expects NCHW).
+        # At this point, image is always in [B, H, W, C] format (either originally HWC,
+        # or NCHW that was permuted to HWC at line 46 for processing).
+        image = image.permute(0, 3, 1, 2)  # [B, H, W, C] -> [B, C, H, W]
 
         out_images[key] = image
 
