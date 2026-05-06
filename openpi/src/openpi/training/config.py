@@ -532,6 +532,34 @@ class TrainConfig:
     # instead of the standard PI0Pytorch model (PyTorch training only).
     stu_num_filters: int = 0
 
+    # Number of STU-v2 spectral filters. If > 0, the PI0STUv2Pytorch model is
+    # used: STU operates on the noisy action chunk (LDS input) and adds spectral
+    # context to action token embeddings BEFORE the transformer, with zero-init
+    # output (analog of the dreamer-jax stu_core integration).
+    stu_v2_num_filters: int = 0
+
+    # Number of STU-v3 spectral filters. If > 0, the PI0STUv3Pytorch model is
+    # used: STU operates as a smoothness prior on the *predicted velocity field*
+    # v_t (output side, on the actual action trajectory rather than hidden
+    # states). zero_init keeps it = baseline at step 0; flip to False to test
+    # small-init / random-init variants.
+    stu_v3_num_filters: int = 0
+    stu_v3_zero_init: bool = True
+
+    # Number of STU-v4 spectral filters. If > 0, the PI0STUv4Pytorch model is
+    # used: STU as a pre-input branch on the PaliGemma prefix (image+language
+    # tokens), zero-init out projection. VLM-side analog of v2; addresses
+    # reviewer feedback on adding STU "in parallel with the action expert".
+    stu_v4_num_filters: int = 0
+
+    # Number of Mamba SSM state dimensions for the v4 (PaliGemma-prefix) branch.
+    # Generic-SSM control for STU-v4. Same placement, same zero-init residual.
+    mamba_v4_state_dim: int = 0
+
+    # Number of Mamba SSM state dimensions. If > 0 (and stu_num_filters == 0),
+    # the PI0MambaPytorch model will be used (PyTorch training only).
+    mamba_state_dim: int = 0
+
     # If the value is greater than 1, FSDP will be enabled and shard across number of specified devices; overall
     # device memory will be reduced but training could potentially be slower.
     # eg. if total device is 4 and fsdp devices is 2; then the model will shard to 2 devices and run
@@ -762,8 +790,269 @@ _CONFIGS = [
         optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
         ema_decay=0.999,
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
-        pytorch_weight_path="/scratch/network/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
         num_train_steps=30_000,
+    ),
+    #
+    # STU-v3 (smoothness prior on predicted velocity v_t).
+    # Operates on action_dim=32 directly, on the output side - the most
+    # natural location for a "smoothness across the action horizon" prior.
+    #
+    TrainConfig(
+        name="pi05_libero_stu_v3_k4",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=10, discrete_state_input=False),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True),
+            extra_delta_transform=False,
+        ),
+        batch_size=256,
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=10_000, peak_lr=5e-5, decay_steps=1_000_000, decay_lr=5e-5),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        num_train_steps=30_000,
+        stu_v3_num_filters=4,
+        stu_v3_zero_init=True,
+    ),
+    TrainConfig(
+        name="pi05_libero_stu_v3_k4_warmup1k",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=10, discrete_state_input=False),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True),
+            extra_delta_transform=False,
+        ),
+        batch_size=256,
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=1_000, peak_lr=5e-5, decay_steps=1_000_000, decay_lr=5e-5),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        num_train_steps=30_000,
+        stu_v3_num_filters=4,
+        stu_v3_zero_init=True,
+    ),
+    #
+    # STU-v4 (pre-input branch on PaliGemma prefix, zero-init).
+    # VLM-side analog of v2: STU runs on the (image+language) prefix
+    # embeddings before the VLM forward, residual is masked to non-pad
+    # positions, and the out projection is zero-init so step 0 = baseline.
+    # Tests reviewer hypothesis that the action-expert-only failure was a
+    # capacity/distribution-shift artefact and that the larger backbone has
+    # more redundancy to absorb a spectral side-branch.
+    #
+    TrainConfig(
+        name="pi05_libero_stu_v4_k4",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=10, discrete_state_input=False),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True),
+            extra_delta_transform=False,
+        ),
+        batch_size=256,
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=10_000, peak_lr=5e-5, decay_steps=1_000_000, decay_lr=5e-5),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        num_train_steps=30_000,
+        stu_v4_num_filters=4,
+    ),
+    TrainConfig(
+        name="pi05_libero_stu_v4_k4_warmup1k",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=10, discrete_state_input=False),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True),
+            extra_delta_transform=False,
+        ),
+        batch_size=256,
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=1_000, peak_lr=5e-5, decay_steps=1_000_000, decay_lr=5e-5),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        num_train_steps=30_000,
+        stu_v4_num_filters=4,
+    ),
+    TrainConfig(
+        name="pi05_libero_stu_v4_k8",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=10, discrete_state_input=False),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True),
+            extra_delta_transform=False,
+        ),
+        batch_size=256,
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=10_000, peak_lr=5e-5, decay_steps=1_000_000, decay_lr=5e-5),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        num_train_steps=30_000,
+        stu_v4_num_filters=8,
+    ),
+    TrainConfig(
+        name="pi05_libero_mamba_v4_k4",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=10, discrete_state_input=False),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True),
+            extra_delta_transform=False,
+        ),
+        batch_size=256,
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=10_000, peak_lr=5e-5, decay_steps=1_000_000, decay_lr=5e-5),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        num_train_steps=30_000,
+        mamba_v4_state_dim=4,
+    ),
+    TrainConfig(
+        name="pi05_libero_stu_v4_h20_k4",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=20, discrete_state_input=False),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True),
+            extra_delta_transform=False,
+        ),
+        batch_size=256,
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=10_000, peak_lr=5e-5, decay_steps=1_000_000, decay_lr=5e-5),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        num_train_steps=30_000,
+        stu_v4_num_filters=4,
+    ),
+    #
+    # STU-v2 horizon ablation (longer horizons may give M_phi more sequence
+    # structure to filter; K=4 only since K=8 was no different at H=10).
+    #
+    TrainConfig(
+        name="pi05_libero_stu_v2_h20_k4",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=20, discrete_state_input=False),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True),
+            extra_delta_transform=False,
+        ),
+        batch_size=256,
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=10_000, peak_lr=5e-5, decay_steps=1_000_000, decay_lr=5e-5),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        num_train_steps=30_000,
+        stu_v2_num_filters=4,
+    ),
+    TrainConfig(
+        name="pi05_libero_stu_v2_h50_k4",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=50, discrete_state_input=False),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True),
+            extra_delta_transform=False,
+        ),
+        batch_size=256,
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=10_000, peak_lr=5e-5, decay_steps=1_000_000, decay_lr=5e-5),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        num_train_steps=30_000,
+        stu_v2_num_filters=4,
+    ),
+    #
+    # STU-v2 with shortened LR warmup so M_phi gets real LR signal within the
+    # 5K-step training budget. Tests whether the "no improvement" seen with
+    # 10K-step warmup is a budget artifact rather than a fundamental limit.
+    # Paired baseline runs at the same warmup so the comparison is apples-to-apples.
+    #
+    TrainConfig(
+        name="pi05_libero_warmup1k",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=10, discrete_state_input=False),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True),
+            extra_delta_transform=False,
+        ),
+        batch_size=256,
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=1_000, peak_lr=5e-5, decay_steps=1_000_000, decay_lr=5e-5),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        num_train_steps=30_000,
+    ),
+    TrainConfig(
+        name="pi05_libero_stu_v2_k4_warmup1k",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=10, discrete_state_input=False),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True),
+            extra_delta_transform=False,
+        ),
+        batch_size=256,
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=1_000, peak_lr=5e-5, decay_steps=1_000_000, decay_lr=5e-5),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        num_train_steps=30_000,
+        stu_v2_num_filters=4,
+    ),
+    #
+    # STU-v2 (pre-input branch, zero-init) for LIBERO fine-tuning.
+    # Inspired by stu-dreamer-jax: STU on the LDS input (noisy action chunk)
+    # injected as additional context BEFORE the transformer, zero-init out.
+    #
+    TrainConfig(
+        name="pi05_libero_stu_v2_k4",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=10, discrete_state_input=False),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True),
+            extra_delta_transform=False,
+        ),
+        batch_size=256,
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=10_000,
+            peak_lr=5e-5,
+            decay_steps=1_000_000,
+            decay_lr=5e-5,
+        ),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        num_train_steps=30_000,
+        stu_v2_num_filters=4,
+    ),
+    TrainConfig(
+        name="pi05_libero_stu_v2_k8",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=10, discrete_state_input=False),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True),
+            extra_delta_transform=False,
+        ),
+        batch_size=256,
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=10_000,
+            peak_lr=5e-5,
+            decay_steps=1_000_000,
+            decay_lr=5e-5,
+        ),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        num_train_steps=30_000,
+        stu_v2_num_filters=8,
     ),
     #
     # STU variants for LIBERO fine-tuning.
@@ -786,7 +1075,7 @@ _CONFIGS = [
         optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
         ema_decay=0.999,
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
-        pytorch_weight_path="/scratch/network/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
         num_train_steps=30_000,
         stu_num_filters=4,
     ),
@@ -808,7 +1097,7 @@ _CONFIGS = [
         optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
         ema_decay=0.999,
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
-        pytorch_weight_path="/scratch/network/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
         num_train_steps=30_000,
         stu_num_filters=8,
     ),
@@ -830,9 +1119,213 @@ _CONFIGS = [
         optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
         ema_decay=0.999,
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
-        pytorch_weight_path="/scratch/network/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
         num_train_steps=30_000,
         stu_num_filters=16,
+    ),
+    #
+    # Mamba SSM baselines for LIBERO (vanilla SSM comparison).
+    #
+    TrainConfig(
+        name="pi05_libero_mamba_k4",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=10, discrete_state_input=False),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True),
+            extra_delta_transform=False,
+        ),
+        batch_size=256,
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=10_000,
+            peak_lr=5e-5,
+            decay_steps=1_000_000,
+            decay_lr=5e-5,
+        ),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        num_train_steps=30_000,
+        mamba_state_dim=4,
+    ),
+    TrainConfig(
+        name="pi05_libero_mamba_k8",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=10, discrete_state_input=False),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True),
+            extra_delta_transform=False,
+        ),
+        batch_size=256,
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=10_000,
+            peak_lr=5e-5,
+            decay_steps=1_000_000,
+            decay_lr=5e-5,
+        ),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        num_train_steps=30_000,
+        mamba_state_dim=8,
+    ),
+    #
+    # Horizon ablation configs (H=5, 20, 50) for baseline, STU-K4, and Mamba-K4.
+    # H=10 is the default above.
+    #
+    # --- H=5 ---
+    TrainConfig(
+        name="pi05_libero_h5",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=5, discrete_state_input=False),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True),
+            extra_delta_transform=False,
+        ),
+        batch_size=256,
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=10_000, peak_lr=5e-5, decay_steps=1_000_000, decay_lr=5e-5),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        num_train_steps=30_000,
+    ),
+    TrainConfig(
+        name="pi05_libero_h5_stu_k4",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=5, discrete_state_input=False),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True),
+            extra_delta_transform=False,
+        ),
+        batch_size=256,
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=10_000, peak_lr=5e-5, decay_steps=1_000_000, decay_lr=5e-5),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        num_train_steps=30_000,
+        stu_num_filters=4,
+    ),
+    TrainConfig(
+        name="pi05_libero_h5_mamba_k4",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=5, discrete_state_input=False),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True),
+            extra_delta_transform=False,
+        ),
+        batch_size=256,
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=10_000, peak_lr=5e-5, decay_steps=1_000_000, decay_lr=5e-5),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        num_train_steps=30_000,
+        mamba_state_dim=4,
+    ),
+    # --- H=20 ---
+    TrainConfig(
+        name="pi05_libero_h20",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=20, discrete_state_input=False),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True),
+            extra_delta_transform=False,
+        ),
+        batch_size=256,
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=10_000, peak_lr=5e-5, decay_steps=1_000_000, decay_lr=5e-5),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        num_train_steps=30_000,
+    ),
+    TrainConfig(
+        name="pi05_libero_h20_stu_k4",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=20, discrete_state_input=False),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True),
+            extra_delta_transform=False,
+        ),
+        batch_size=256,
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=10_000, peak_lr=5e-5, decay_steps=1_000_000, decay_lr=5e-5),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        num_train_steps=30_000,
+        stu_num_filters=4,
+    ),
+    TrainConfig(
+        name="pi05_libero_h20_mamba_k4",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=20, discrete_state_input=False),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True),
+            extra_delta_transform=False,
+        ),
+        batch_size=256,
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=10_000, peak_lr=5e-5, decay_steps=1_000_000, decay_lr=5e-5),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        num_train_steps=30_000,
+        mamba_state_dim=4,
+    ),
+    # --- H=50 ---
+    TrainConfig(
+        name="pi05_libero_h50",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=50, discrete_state_input=False),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True),
+            extra_delta_transform=False,
+        ),
+        batch_size=256,
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=10_000, peak_lr=5e-5, decay_steps=1_000_000, decay_lr=5e-5),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        num_train_steps=30_000,
+    ),
+    TrainConfig(
+        name="pi05_libero_h50_stu_k4",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=50, discrete_state_input=False),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True),
+            extra_delta_transform=False,
+        ),
+        batch_size=256,
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=10_000, peak_lr=5e-5, decay_steps=1_000_000, decay_lr=5e-5),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        num_train_steps=30_000,
+        stu_num_filters=4,
+    ),
+    TrainConfig(
+        name="pi05_libero_h50_mamba_k4",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=50, discrete_state_input=False),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True),
+            extra_delta_transform=False,
+        ),
+        batch_size=256,
+        lr_schedule=_optimizer.CosineDecaySchedule(warmup_steps=10_000, peak_lr=5e-5, decay_steps=1_000_000, decay_lr=5e-5),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        pytorch_weight_path="/scratch/gpfs/EHAZAN/sk3686/openpi_checkpoints/pi05_base_pytorch",
+        num_train_steps=30_000,
+        mamba_state_dim=4,
     ),
     #
     # Fine-tuning Aloha configs.

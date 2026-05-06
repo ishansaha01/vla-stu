@@ -84,6 +84,8 @@ class STULayer(nn.Module):
         output_dim: int,
         use_hankel_L: bool = False,
         dtype: torch.dtype = torch.float32,
+        zero_init: bool = False,
+        init_scale: float = 1.0,
     ):
         super().__init__()
         self.seq_len = seq_len
@@ -93,6 +95,8 @@ class STULayer(nn.Module):
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.use_hankel_L = use_hankel_L
+        self.zero_init = zero_init
+        self.init_scale = init_scale
 
         # Spectral filters: [L, K]
         phi = get_spectral_filters(seq_len, num_filters, use_hankel_L, dtype=dtype)
@@ -101,15 +105,29 @@ class STULayer(nn.Module):
         # FFT length
         self.n = nearest_power_of_two(seq_len * 2 - 1, round_up=True)
 
-        # Learnable projections
-        scale = (num_filters * input_dim) ** -0.5
-        self.M_phi_plus = nn.Parameter(
-            torch.randn(num_filters, input_dim, output_dim, dtype=dtype) * scale
-        )
-        if not use_hankel_L:
-            self.M_phi_minus = nn.Parameter(
+        # Learnable projections. Three init regimes:
+        #   zero_init=True            -> exact zeros (model = baseline at step 0)
+        #   init_scale=1.0 (default)  -> standard randn * (K*D_in)^{-1/2}
+        #   init_scale=alpha < 1.0    -> randn * alpha * (K*D_in)^{-1/2}
+        #                                ("small init"; small but non-zero
+        #                                 starting contribution)
+        if zero_init:
+            self.M_phi_plus = nn.Parameter(
+                torch.zeros(num_filters, input_dim, output_dim, dtype=dtype)
+            )
+            if not use_hankel_L:
+                self.M_phi_minus = nn.Parameter(
+                    torch.zeros(num_filters, input_dim, output_dim, dtype=dtype)
+                )
+        else:
+            scale = init_scale * (num_filters * input_dim) ** -0.5
+            self.M_phi_plus = nn.Parameter(
                 torch.randn(num_filters, input_dim, output_dim, dtype=dtype) * scale
             )
+            if not use_hankel_L:
+                self.M_phi_minus = nn.Parameter(
+                    torch.randn(num_filters, input_dim, output_dim, dtype=dtype) * scale
+                )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """x: [B, L, D_in] -> [B, L, D_out]"""

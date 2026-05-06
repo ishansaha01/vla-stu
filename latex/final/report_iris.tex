@@ -32,7 +32,7 @@
 % --- Abstract ---
 \section*{Abstract}
 
-Transformer-based world models such as IRIS [1], STORM [2], TWISTER [3], and TWM [4] have demonstrated impressive sample efficiency in model-based reinforcement learning by learning environment dynamics and training policies entirely in imagination. However, these approaches suffer from compounding prediction errors during long-horizon rollouts: small inaccuracies in single-step predictions accumulate over many autoregressive steps, degrading the quality of imagined trajectories and the policies learned from them. We propose to address this fundamental limitation by integrating Spectral Transfer Units (STUs) [5]---sequence-to-sequence layers based on Hankel matrix eigendecomposition---into the dynamics backbone of Transformer world models. STUs provide efficient long-range memory through spectral filtering, enabling the model to capture global temporal structure that local attention may miss. We outline our proposed architecture, discuss its theoretical motivation from online control, and describe planned experiments comparing STU-augmented world models against Transformer baselines on the Atari 100k benchmark, with a focus on model fidelity over extended rollout horizons and normalized performance per parameter count.
+Transformer-based world models such as IRIS [1], STORM [2], TWISTER [3], and TWM [4] have demonstrated impressive sample efficiency in model-based reinforcement learning by learning environment dynamics and training policies entirely in imagination. However, these approaches suffer from compounding prediction errors during long-horizon rollouts: small inaccuracies in single-step predictions accumulate over many autoregressive steps, degrading the quality of imagined trajectories and the policies learned from them. We propose to address this fundamental limitation by integrating Spectral Transfer Units (STUs) [5]---sequence-to-sequence layers based on Hankel matrix eigendecomposition---into the dynamics backbone of Transformer world models. STUs provide efficient long-range memory through spectral filtering, enabling the model to capture global temporal structure that local attention may miss. The proposal in this companion report is now tightly informed by two pieces of evidence we accumulated during this project: (i) our own VLA experiments (companion report) showing that \emph{post-hoc} STU residuals on top of a converged Transformer hurt fine-tuning, while a \emph{pre-input}, zero-initialised integration ties baseline; and (ii) the stu-dreamer-jax effort (Connor Brown's thesis, this group), which shows the same asymmetry on Atari-style world models---STU placed inside the recurrence on the action history (the LDS input) yields a 20\% improvement in data-efficiency and a $+24$ point gain in converged score on \texttt{dmc\_walker\_walk}. These lessons concretely shape the architecture below: STU on the LDS input, injected before the recurrence, with zero-initialised output, validated against a Haar-random-orthonormal control to confirm the Hankel basis itself is what matters.
 
 % --- Related Work ---
 \section*{Related Work: Transformer World Models}
@@ -59,13 +59,16 @@ y = \textstyle\sum_{k=1}^{K} \left( (u * \phi_k^+) \cdot M_k^+ + (u * \phi_k^-) 
 \vspace{-0.3em}
 where convolution is performed via FFT in $O(L \log L)$ time. Crucially, the spectral filters encode global sequential structure---low-frequency trends and periodic patterns---that attention-based models must learn implicitly through many layers. The connection to online control theory [5] provides theoretical guarantees on the approximation quality of linear dynamical systems, suggesting STUs are well-suited for modeling the structured dynamics of game environments.
 
-\textbf{Architecture.}
-We propose replacing (or augmenting) the autoregressive Transformer backbone $G$ in IRIS with an STU-enhanced architecture. Specifically, we consider two integration strategies:
+\textbf{Architecture (informed by VLA experiments and stu-dreamer-jax).}
+The midterm of this project considered two generic integration strategies---residual STU blocks between Transformer layers, and a pure STU dynamics head replacing attention. The experiments we ran in parallel on a VLA model (companion report \texttt{report\_vla.tex}) and the stu-dreamer-jax results from a sibling thesis [9] both rule out the most na{\"\i}ve version of the first option---inserting an STU residual on top of the converged dynamics output catastrophically hurts (Atari) or measurably hurts (LIBERO) the host model. We therefore propose the following more constrained architecture, which mirrors the design that worked in stu-dreamer-jax:
+
 \begin{enumerate}[leftmargin=1.5em, nosep]
-    \item \textbf{Residual STU blocks}: Insert STU layers between Transformer blocks, allowing spectral filtering to refine the hidden representations at each layer. The Transformer captures local token-level dependencies while the STU captures global temporal patterns.
-    \item \textbf{STU dynamics head}: Replace the Transformer entirely for dynamics prediction, using an STU-based sequence model that processes the full token-action history. This tests whether spectral filtering alone can capture environment dynamics.
+    \item \textbf{STU on the LDS input.} The STU consumes a rolling window of the most recent \emph{action tokens} (the LDS input per Theorem 3.1 of [5])---not the post-attention hidden state. In IRIS, this means the action token sequence and (optionally) the recent observation tokens. Only the spectral context at the most-recent timestep is used downstream.
+    \item \textbf{Inject as an additional input branch to the Transformer.} The projected spectral context is added to the action / observation embeddings \emph{before} they enter the Transformer's attention layers, analogous to the 4\textsuperscript{th} GRU input branch (\texttt{dynin3}) in the dreamer-jax integration. This avoids the post-hoc refinement pattern that fails in both our VLA experiments and Run~A of stu-dreamer-jax.
+    \item \textbf{Zero-initialised output projection.} $M_k^\pm$ are zeroed at init, so at step 0 the model is bit-identical to the IRIS baseline. The spectral component is allowed to grow only through gradient flow, removing the early-training instability that random STU init causes.
 \end{enumerate}
-In both cases, the discrete autoencoder $(E, D)$ and the actor-critic policy learning are unchanged from IRIS. Only the dynamics backbone is modified, isolating the effect of the architectural change.
+
+We \emph{do not} pursue the pure-STU dynamics head from the midterm proposal: in both our VLA work and the dreamer-jax experiments, the spectral component is most useful as an additive context, not as a replacement for attention. The discrete autoencoder $(E, D)$, reward / termination heads, and actor-critic policy remain unchanged from IRIS, isolating the dynamics-backbone modification.
 
 \textbf{Motivation from online control.}
 STUs originate from spectral filtering algorithms for online control of linear dynamical systems [5, 7]. The Hankel matrix captures the impulse response of such systems, and its eigenvectors form an optimal basis for approximating system dynamics. Game environments, while not linear, exhibit structured temporal patterns (periodic enemy spawns, predictable physics, score mechanics) that spectral filters can efficiently represent. By providing an inductive bias toward smooth, globally-coherent temporal predictions, STUs may reduce the compounding errors that arise from purely local (attention-based) next-token prediction.
@@ -82,7 +85,13 @@ We plan to evaluate on the \textbf{Atari 100k} benchmark [8], following the IRIS
     \item \textbf{Imagination horizon sensitivity}: Train policies with varying imagination horizons $H$ and measure the marginal return of longer rollouts. If STUs reduce compounding error, longer horizons should benefit STU models more than Transformer baselines.
 \end{itemize}
 
-\textbf{Baselines.} We compare against IRIS (Transformer backbone) using the official codebase, and ablate: (a) STU-only backbone, (b) Transformer + residual STU blocks, (c) varying $K \in \{4, 8, 16, 32\}$ spectral filters.
+\textbf{Baselines and ablations.} We compare against IRIS (Transformer backbone) using the official codebase, and ablate the design choices our parallel experiments identified as load-bearing:
+\begin{itemize}[leftmargin=1.5em, nosep]
+    \item \textbf{Placement}: pre-Transformer input branch (proposed) vs.\ post-Transformer residual (the configuration that fails in both companion projects).
+    \item \textbf{Initialisation}: zero-init output projection (proposed) vs.\ standard random init.
+    \item \textbf{Filter basis}: Hankel eigenvectors (proposed) vs.\ Haar-random orthonormal columns with matched $\sigma^{1/4}$ energy spectrum---the same control that stu-dreamer-jax used to confirm the improvement is specific to the Hankel basis (random filters there were $\approx 25\%$ slower than baseline).
+    \item \textbf{Number of filters}: $K \in \{4, 8, 16, 32\}$ at the longest sequence length we can afford.
+\end{itemize}
 
 % --- References ---
 \section*{References}
@@ -95,6 +104,7 @@ We plan to evaluate on the \textbf{Atari 100k} benchmark [8], following the IRIS
     \item Ross, S., Gordon, G., Bagnell, D. A Reduction of Imitation Learning to No-Regret Online Learning. \textit{AISTATS}, 2011.
     \item Hazan, E., et al. Spectral Filtering for General Linear Dynamical Systems. \textit{NeurIPS}, 2018.
     \item Kaiser, L., et al. Model Based Reinforcement Learning for Atari. \textit{ICLR}, 2020.
+    \item Brown, C. \textit{Spectral Transform Units in Recurrent World Models}. Senior Thesis, Princeton CS, 2026. Repo: \texttt{stu-dreamer-jax}.
 \end{enumerate}
 
 \end{document}

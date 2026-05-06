@@ -42,7 +42,12 @@ import wandb
 
 import openpi.models.pi0_config
 import openpi.models_pytorch.pi0_pytorch
+import openpi.models_pytorch.pi0_mamba_pytorch
 import openpi.models_pytorch.pi0_stu_pytorch
+import openpi.models_pytorch.pi0_stu_v2_pytorch
+import openpi.models_pytorch.pi0_stu_v3_pytorch
+import openpi.models_pytorch.pi0_stu_v4_pytorch
+import openpi.models_pytorch.pi0_mamba_v4_pytorch
 import openpi.shared.normalize as _normalize
 import openpi.training.config as _config
 import openpi.training.data_loader as _data
@@ -407,13 +412,56 @@ def train_loop(config: _config.TrainConfig):
         # Update dtype to match pytorch_training_precision
         object.__setattr__(model_cfg, "dtype", config.pytorch_training_precision)
 
-    # Check if STU variant is requested via config name
-    stu_num_filters = getattr(config, "stu_num_filters", None)
-    if stu_num_filters is not None and stu_num_filters > 0:
+    # Check if STU or Mamba variant is requested via config
+    stu_num_filters = getattr(config, "stu_num_filters", 0) or 0
+    stu_v2_num_filters = getattr(config, "stu_v2_num_filters", 0) or 0
+    stu_v3_num_filters = getattr(config, "stu_v3_num_filters", 0) or 0
+    stu_v3_zero_init = getattr(config, "stu_v3_zero_init", True)
+    stu_v4_num_filters = getattr(config, "stu_v4_num_filters", 0) or 0
+    mamba_v4_state_dim = getattr(config, "mamba_v4_state_dim", 0) or 0
+    mamba_state_dim = getattr(config, "mamba_state_dim", 0) or 0
+    if mamba_v4_state_dim > 0:
+        model = openpi.models_pytorch.pi0_mamba_v4_pytorch.PI0MambaV4Pytorch(
+            model_cfg, mamba_state_dim=mamba_v4_state_dim
+        ).to(device)
+        logging.info(
+            f"Using PI0MambaV4Pytorch (pre-input Mamba on PaliGemma prefix, "
+            f"zero-init out_proj) with state_dim={mamba_v4_state_dim}"
+        )
+    elif stu_v4_num_filters > 0:
+        model = openpi.models_pytorch.pi0_stu_v4_pytorch.PI0STUv4Pytorch(
+            model_cfg, stu_num_filters=stu_v4_num_filters
+        ).to(device)
+        logging.info(
+            f"Using PI0STUv4Pytorch (pre-input STU on PaliGemma prefix, "
+            f"zero-init) with K={stu_v4_num_filters}"
+        )
+    elif stu_v3_num_filters > 0:
+        model = openpi.models_pytorch.pi0_stu_v3_pytorch.PI0STUv3Pytorch(
+            model_cfg, stu_num_filters=stu_v3_num_filters, zero_init=stu_v3_zero_init,
+        ).to(device)
+        logging.info(
+            f"Using PI0STUv3Pytorch (smoothness on v_t, zero_init={stu_v3_zero_init}) "
+            f"with K={stu_v3_num_filters}"
+        )
+    elif stu_v2_num_filters > 0:
+        model = openpi.models_pytorch.pi0_stu_v2_pytorch.PI0STUv2Pytorch(
+            model_cfg, stu_num_filters=stu_v2_num_filters
+        ).to(device)
+        logging.info(
+            f"Using PI0STUv2Pytorch (pre-input STU branch, zero-init) with "
+            f"K={stu_v2_num_filters}"
+        )
+    elif stu_num_filters > 0:
         model = openpi.models_pytorch.pi0_stu_pytorch.PI0STUPytorch(
             model_cfg, stu_num_filters=stu_num_filters
         ).to(device)
         logging.info(f"Using PI0STUPytorch model with {stu_num_filters} spectral filters")
+    elif mamba_state_dim > 0:
+        model = openpi.models_pytorch.pi0_mamba_pytorch.PI0MambaPytorch(
+            model_cfg, mamba_state_dim=mamba_state_dim
+        ).to(device)
+        logging.info(f"Using PI0MambaPytorch model with state_dim={mamba_state_dim}")
     else:
         model = openpi.models_pytorch.pi0_pytorch.PI0Pytorch(model_cfg).to(device)
 
