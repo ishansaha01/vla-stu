@@ -1,7 +1,7 @@
 \documentclass[landscape]{article}
 
 % --- Page geometry: 48in x 36in landscape (standard Princeton conference poster) ---
-\usepackage[paperwidth=48in, paperheight=36in, margin=1.3in, top=0in, bottom=0in, left=1.3in, right=1.3in, includeheadfoot=false]{geometry}
+\usepackage[paperwidth=40in, paperheight=30in, margin=1.08in, top=0in, bottom=0in, left=1.08in, right=1.08in, includeheadfoot=false]{geometry}
 
 % --- Packages ---
 \usepackage[T1]{fontenc}
@@ -27,14 +27,14 @@
 \hypersetup{colorlinks=true, urlcolor=brandorange, linkcolor=brandorange, citecolor=brandorange}
 
 % --- Font sizes scaled up for poster viewing ---
-\renewcommand{\normalsize}{\fontsize{25pt}{31pt}\selectfont}
-\renewcommand{\small}{\fontsize{22pt}{27pt}\selectfont}
-\renewcommand{\footnotesize}{\fontsize{20pt}{25pt}\selectfont}
-\renewcommand{\large}{\fontsize{31pt}{37pt}\selectfont}
-\renewcommand{\Large}{\fontsize{37pt}{43pt}\selectfont}
-\renewcommand{\LARGE}{\fontsize{45pt}{51pt}\selectfont}
-\renewcommand{\huge}{\fontsize{60pt}{68pt}\selectfont}
-\renewcommand{\Huge}{\fontsize{84pt}{94pt}\selectfont}
+\renewcommand{\normalsize}{\fontsize{21pt}{26pt}\selectfont}
+\renewcommand{\small}{\fontsize{18pt}{23pt}\selectfont}
+\renewcommand{\footnotesize}{\fontsize{17pt}{21pt}\selectfont}
+\renewcommand{\large}{\fontsize{26pt}{31pt}\selectfont}
+\renewcommand{\Large}{\fontsize{31pt}{36pt}\selectfont}
+\renewcommand{\LARGE}{\fontsize{38pt}{43pt}\selectfont}
+\renewcommand{\huge}{\fontsize{50pt}{57pt}\selectfont}
+\renewcommand{\Huge}{\fontsize{70pt}{78pt}\selectfont}
 
 % --- Section heading: centered bold sans-serif (Raleway-like) in brand orange + rule below ---
 \titleformat{\section}[block]
@@ -52,7 +52,7 @@
 
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{0.35em}
-\setlength{\columnsep}{0.85in}
+\setlength{\columnsep}{0.71in}
 \setlength{\columnseprule}{0pt}
 
 \pagestyle{empty}
@@ -62,22 +62,22 @@
 % =====================================================================
 % TITLE BAR — flush to page edges (no margin), Princeton logo on right
 % =====================================================================
-\noindent\hspace*{-1.3in}%
+\noindent\hspace*{-1.08in}%
 \colorbox{brandorange}{%
-\begin{minipage}[c][3.4in][c]{\dimexpr\paperwidth-2\fboxsep\relax}
+\begin{minipage}[c][2.83in][c]{\dimexpr\paperwidth-2\fboxsep\relax}
 \begin{minipage}[c]{0.20\paperwidth}\hfill\end{minipage}%
 \begin{minipage}[c]{0.60\paperwidth}
 \centering
 \color{white}\sffamily
-{\fontsize{76pt}{86pt}\selectfont \bfseries Spectral Filtering for Vision--Language--Action Models}\\[0.8em]
-{\fontsize{28pt}{32pt}\selectfont Shivam Kak [sk3686@princeton.edu]\,$^{1}$ \quad
+{\fontsize{63pt}{72pt}\selectfont \bfseries Spectral Filtering for Vision--Language--Action Models}\\[0.8em]
+{\fontsize{23pt}{27pt}\selectfont Shivam Kak [sk3686@princeton.edu]\,$^{1}$ \quad
  Ishan Saha [is1893@princeton.edu]\,$^{1}$ \quad
  Connor Brown [cb6856@princeton.edu]\,$^{1}$}\\[0.35em]
-{\fontsize{24pt}{28pt}\selectfont $^{1}$Princeton University}
+{\fontsize{20pt}{23pt}\selectfont $^{1}$Princeton University}
 \end{minipage}%
 \begin{minipage}[c]{0.20\paperwidth}
 \centering
-\includegraphics[height=2.0in]{../../princeton_logo.png}
+\includegraphics[height=1.67in]{../../princeton_logo.png}
 \end{minipage}%
 \end{minipage}%
 }
@@ -305,13 +305,13 @@ We thank Professor Dhruv Shah, instructor of ECE~534, and teaching assistants Li
 % FOOTER BAR — flush to page edges (no margin)
 % =====================================================================
 \vfill
-\noindent\hspace*{-1.3in}%
+\noindent\hspace*{-1.08in}%
 \colorbox{brandorange}{%
-\begin{minipage}[c][1.0in][c]{\dimexpr\paperwidth-2\fboxsep\relax}
+\begin{minipage}[c][0.83in][c]{\dimexpr\paperwidth-2\fboxsep\relax}
 \color{white}\sffamily
-\hspace*{1.5in}{\Large \href{https://github.com/ishansaha01/vla-stu}{\color{white}\texttt{https://github.com/ishansaha01/vla-stu}}} \hfill
+\hspace*{1.25in}{\Large \href{https://github.com/ishansaha01/vla-stu}{\color{white}\texttt{https://github.com/ishansaha01/vla-stu}}} \hfill
 {\Large \bfseries ECE 534} \hfill
-{\Large \texttt{sk3686, is1893, cb6856 @princeton.edu}}\hspace*{1.5in}
+{\Large \texttt{sk3686, is1893, cb6856 @princeton.edu}}\hspace*{1.25in}
 \end{minipage}%
 }
 
